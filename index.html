@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>معلّم الإنجليزية</title>
+<style>
+:root{--bg:#f6f4ef;--card:#fff;--ink:#1d2433;--mute:#6b7280;--accent:#0f766e;--accent-ink:#fff;--user:#e0f2ef;--bot:#fff;--line:#e5e1d8;--warn:#b45309;box-sizing:border-box;padding-top:env(safe-area-inset-top,0px);padding-bottom:env(safe-area-inset-bottom,0px)}
+@media (prefers-color-scheme:dark){:root{--bg:#10151c;--card:#18202b;--ink:#e8ecf2;--mute:#9aa4b2;--accent:#2dd4bf;--accent-ink:#06201d;--user:#12332f;--bot:#18202b;--line:#273241;--warn:#fbbf24}}
+*{box-sizing:border-box}
+html,body{height:100%;margin:0}
+body{background:var(--bg);color:var(--ink);font-family:system-ui,-apple-system,"Segoe UI",Tahoma,sans-serif;display:flex;flex-direction:column;max-width:720px;margin:0 auto;line-height:1.6}
+header{padding:12px 16px;border-bottom:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:8px}
+h1{font-size:1.1rem;margin:0}
+.sub{font-size:.8rem;color:var(--mute)}
+.bar{display:flex;gap:8px;padding:10px 16px;overflow-x:auto;border-bottom:1px solid var(--line)}
+select,button{font:inherit;color:var(--ink)}
+select{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 10px}
+.chip{white-space:nowrap;background:var(--card);border:1px solid var(--line);border-radius:999px;padding:6px 14px;cursor:pointer}
+.chip.on{background:var(--accent);color:var(--accent-ink);border-color:var(--accent)}
+#chat{flex:1;overflow-y:auto;padding:16px;display:flex;flex-direction:column;gap:10px}
+.msg{max-width:88%;padding:10px 14px;border-radius:16px;border:1px solid var(--line);white-space:pre-wrap;word-wrap:break-word}
+.me{background:var(--user);align-self:flex-start}
+.bot{background:var(--bot);align-self:flex-end}
+.note{align-self:center;color:var(--mute);font-size:.85rem;text-align:center}
+.err{color:var(--warn)}
+.tools{display:flex;padding:0 16px 8px}
+.tools button{background:none;border:0;color:var(--mute);font-size:.85rem;cursor:pointer;text-decoration:underline;padding:0}
+form{display:flex;gap:8px;padding:10px 16px;border-top:1px solid var(--line)}
+#in{flex:1;border:1px solid var(--line);background:var(--card);color:var(--ink);border-radius:12px;padding:10px 12px;font:inherit;resize:none;max-height:120px}
+#send{background:var(--accent);color:var(--accent-ink);border:0;border-radius:12px;padding:0 18px;font-weight:600;cursor:pointer}
+#send:disabled{opacity:.5}
+</style>
+</head>
+<body>
+<header>
+  <div><h1>🎓 معلّم الإنجليزية</h1><div class="sub" id="stat">تدرّب مع معلّم ذكي يصحّح أخطاءك</div></div>
+  <select id="level" aria-label="المستوى">
+    <option value="A1">مبتدئ A1</option>
+    <option value="A2" selected>أساسي A2</option>
+    <option value="B1">متوسط B1</option>
+    <option value="B2">فوق المتوسط B2</option>
+  </select>
+</header>
+<div class="bar" id="modes">
+  <button class="chip on" data-m="chat" type="button">💬 محادثة</button>
+  <button class="chip" data-m="vocab" type="button">📚 مفردات</button>
+  <button class="chip" data-m="quiz" type="button">📝 اختبار</button>
+  <button class="chip" data-m="work" type="button">💼 إنجليزي للعمل</button>
+</div>
+<div id="chat" aria-live="polite"></div>
+<div class="tools"><button id="clear" type="button">بدء محادثة جديدة</button></div>
+<form id="f">
+  <textarea id="in" rows="1" dir="auto" placeholder="Write in English… / اكتب بالإنجليزية"></textarea>
+  <button id="send" type="submit">إرسال</button>
+</form>
+<script>
+const API = "/api/api/chat";
+const MODES = {
+  chat:{start:"Let's start. Please greet me and ask me one simple question.",label:"محادثة حرة: تحدّث وسأصحّح أخطاءك."},
+  vocab:{start:"Teach me 5 useful new words at my level, one at a time starting with the first.",label:"مفردات: كلمات جديدة مع أمثلة."},
+  quiz:{start:"Give me a short quiz: ask ONE multiple-choice question at my level. Wait for my answer before the next.",label:"اختبار: أسئلة قصيرة وتصحيح فوري."},
+  work:{start:"Start a workplace English role-play. Set the scene briefly and ask me to respond.",label:"إنجليزي للعمل: سيناريوهات مهنية."}
+};
+const $ = id => document.getElementById(id);
+const chat=$('chat'), inp=$('in'), send=$('send');
+let mode='chat', history=[], busy=false, count=0;
+try{count=+localStorage.getItem('et_count')||0;const l=localStorage.getItem('et_level');if(l)$('level').value=l}catch(e){}
+function stat(){$('stat').textContent=count?`أرسلت ${count} رسالة حتى الآن 👏`:'تدرّب مع معلّم ذكي يصحّح أخطاءك'}
+stat();
+function add(text,cls){const d=document.createElement('div');d.className='msg '+cls;d.dir='auto';d.textContent=text;chat.appendChild(d);chat.scrollTop=chat.scrollHeight;return d}
+function note(t){const d=document.createElement('div');d.className='note';d.textContent=t;chat.appendChild(d)}
+async function ask(text, hidden){
+  if(busy) return;
+  busy=true; send.disabled=true;
+  if(!hidden){add(text,'me');count++;try{localStorage.setItem('et_count',count)}catch(e){}stat()}
+  history.push({role:'user',content:text});
+  const out=add('…','bot');
+  try{
+    const r=await fetch(API,{method:'POST',headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({messages:history,level:$('level').value,mode})});
+    if(r.status===429) throw new Error('انتهى حدّك اليومي من الرسائل. عد غدًا 🌙');
+    if(!r.ok) throw new Error('حدث خطأ. حاول مرة أخرى.');
+    const data=await r.json();
+    out.textContent=data.text; history.push({role:'assistant',content:data.text});
+  }catch(e){
+    history.pop(); out.className='msg bot err';
+    out.textContent=e.message||'تعذّر الاتصال. تحقق من الإنترنت.';
+  }
+  chat.scrollTop=chat.scrollHeight;
+  busy=false; send.disabled=false; inp.focus();
+}
+function reset(){history=[];chat.innerHTML='';note(MODES[mode].label);ask(MODES[mode].start,true)}
+$('f').addEventListener('submit',e=>{e.preventDefault();const t=inp.value.trim();if(!t)return;inp.value='';inp.style.height='auto';ask(t,false)});
+inp.addEventListener('keydown',e=>{if(e.key==='Enter'&&!e.shiftKey){e.preventDefault();$('f').requestSubmit()}});
+inp.addEventListener('input',()=>{inp.style.height='auto';inp.style.height=Math.min(inp.scrollHeight,120)+'px'});
+$('modes').addEventListener('click',e=>{const b=e.target.closest('.chip');if(!b||busy)return;
+  document.querySelectorAll('.chip').forEach(c=>c.classList.remove('on'));b.classList.add('on');mode=b.dataset.m;reset()});
+$('level').addEventListener('change',()=>{try{localStorage.setItem('et_level',$('level').value)}catch(e){}if(!busy)reset()});
+$('clear').addEventListener('click',()=>{if(!busy)reset()});
+reset();
+</script>
+</body>
+</html>
